@@ -51,14 +51,21 @@ struct MarkerLabel {
 	bool drawn = false;
 	olc::vi2d position() const {
 		olc::vi2d position;
-		position.x = (this->direction.x) ? 
-			this->marker.position.x - this->dimensions().x : 
+		position.x = (this->direction.x) ?
+			this->marker.position.x - this->dimensions().x :
 			this->marker.position.x + this->marker.dimensions.x;
 		position.y = this->marker.position.y + this->marker.dimensions.y / 2 - this->dimensions().y / 2;
 		return position;
 	}
 	olc::vi2d dimensions() const {
 		return olc::vi2d(this->marker.title.size() * 8, 8);
+	}
+	struct MarkerLabel& operator=(const struct MarkerLabel& l) {
+		marker = l.marker;
+		direction = l.direction;
+		hidden = l.hidden;
+		drawn = l.drawn;
+		return *this;
 	}
 };
 
@@ -84,7 +91,7 @@ struct MarkerLabelHitbox {
 			this->position.x < b.position.x + b.dimensions.x &&
 			this->position.y < b.position.y + b.dimensions.y;
 	}
-	bool operator==(const MarkerLabelHitbox& h) const {
+	bool operator==(const struct MarkerLabelHitbox& h) const {
 		return this->position == h.position && this->dimensions == h.dimensions;
 	}
 };
@@ -115,6 +122,8 @@ public:
 
 	bool OnUserUpdate(float fElapsedTime) override
 	{
+		bool returnState = true;
+
 		// Quickly close
 		if (GetKey(olc::ESCAPE).bPressed) {
 			return false;
@@ -123,21 +132,25 @@ public:
 		Clear(olc::BLACK);
 
 		switch (this->appState) {
+		default:
 		case APP_STATE_NORMAL:
-			return this->appStateNormal(fElapsedTime);
+			returnState = this->appStateNormal(fElapsedTime);
+			break;
 		case APP_STATE_SEED_JUMP:
-			return this->appStateSeedJump(fElapsedTime);
+			returnState = this->appStateSeedJump(fElapsedTime);
+			break;
 		}
 
 		// Window Border
 		DrawRect(0, 0, ScreenWidth() - 1, ScreenHeight() - 1, olc::DARK_BLUE);
 
-		return true;
+		return returnState;
 	}
 
 	void createMarkers() {
 		srand(this->seed);
-		this->directionPreference = (this->seed & 0x01) ? WEST : EAST;
+		// this->directionPreference = (this->seed & 0x01) ? WEST : EAST;
+		this->directionPreference = WEST;
 		const olc::vi2d markerDimensions(24, 44);
 
 		markerLabels.clear();
@@ -163,14 +176,27 @@ public:
 		// Run collision detection
 		for (struct MarkerLabel& a : markerLabels) {
 			for (struct MarkerLabel& b : markerLabels) {
-				struct MarkerLabelHitbox aHitbox(a);
-				struct MarkerLabelHitbox bHitbox(b);
+				struct MarkerLabel aEast, bEast;
 
-				if (aHitbox == bHitbox) {
+				aEast = a;
+				bEast = b;
+
+				aEast.direction = EAST;
+				bEast.direction = EAST;
+
+				struct MarkerLabelHitbox aHitbox(a), aEastHitbox(aEast);
+				struct MarkerLabelHitbox bHitbox(b), bEastHitbox(bEast);
+
+
+				if (aHitbox == bHitbox || aEastHitbox == bEastHitbox) {
 					continue;
 				}
 
-				if (aHitbox.collidesWith(bHitbox) && b.drawn) {
+				if (aHitbox.collidesWith(bHitbox)) {
+					a.direction = EAST;
+				}
+				
+				if (a.direction == EAST && aEastHitbox.collidesWith(bEastHitbox)) {
 					a.hidden = true;
 				}
 			}
@@ -280,17 +306,16 @@ public:
 	}
 
 	void drawMap(float fElapsedTime) {
-
-		for (struct MarkerLabel l : markerLabels) {
-			struct MarkerLabelHitbox hitBox = MarkerLabelHitbox(l);
+		for (struct MarkerLabel label : markerLabels) {
+			struct MarkerLabelHitbox hitBox = MarkerLabelHitbox(label);
 
 			// Marker
-			FillRect(l.marker.position, l.marker.dimensions, olc::RED);
+			FillRect(label.marker.position, label.marker.dimensions, olc::RED);
 
 			// Label
-			if (!l.hidden) {
-				DrawRect(l.position(), l.dimensions(), olc::WHITE);
-				DrawString(l.position(), l.marker.title, olc::YELLOW);
+			if (!label.hidden) {
+				DrawRect(label.position(), label.dimensions(), olc::WHITE);
+				DrawString(label.position(), label.marker.title, olc::YELLOW);
 			}
 
 			// Hitbox
